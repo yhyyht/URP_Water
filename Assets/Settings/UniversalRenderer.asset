@@ -14,8 +14,9 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   debugShaders:
     debugReplacementPS: {fileID: 4800000, guid: cf852408f2e174538bcd9b7fda1c5ae7, type: 3}
-  m_RendererFeatures: []
-  m_RendererFeatureMap: 
+  m_RendererFeatures:
+  - {fileID: 3556478304837849703}
+  m_RendererFeatureMap: 67523edb2c265b31
   m_UseNativeRenderPass: 0
   postProcessData: {fileID: 11400000, guid: 41439944d30ece34e96484bdb6645b55, type: 2}
   xrSystemData: {fileID: 11400000, guid: 60e1133243b97e347b653163a8c01b64, type: 2}
@@ -53,3 +54,22 @@ MonoBehaviour:
   m_ClusteredRendering: 0
   m_TileSize: 32
   m_IntermediateTextureMode: 1
+--- !u!114 &3556478304837849703
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4b2a28c102a266e479dc82e1a9109aa4, type: 3}
+  m_Name: UnderWaterMask
+  m_EditorClassIdentifier: 
+  m_Active: 1
+  _edgeSettings:
+    renderPassEvent: 500
+    blitMaterial: {fileID: 2100000, guid: 8fd9c769016e9ed4d8ff5d3178eea772, type: 2}
+    maskMaterial: {fileID: 2100000, guid: ac489c94b8a5c4645acd1f5f14a7addc, type: 2}
+    blitMaterialPassIndex: 0
+    renderTexture: {fileID: 8400000, guid: 45dd072870b93594a9700a57c81a39c9, type: 2}

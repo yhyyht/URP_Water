@@ -14,7 +14,7 @@ public class SamplewaterDebug : MonoBehaviour
     private Bounds bounds;
     private Camera mainCamera;
     [SerializeField] private Light mainLight;
-
+    [SerializeField] private RenderTexture waterHeight;
     [SerializeField] private float springConst = 0.023f;
     [SerializeField] private float damping = 0.005f;
     [SerializeField] private float spread = 0.1f;
@@ -58,6 +58,7 @@ public class SamplewaterDebug : MonoBehaviour
         material.SetVector("_BoundsMin", bounds.min);
         material.SetVector("_BoundsMax", bounds.max);
 
+        material.SetTexture("_WaterHeight", waterHeight);
         if(mainLight != null)
             material.SetMatrix("_SunMatrix", mainLight.transform.localToWorldMatrix.inverse);
     }

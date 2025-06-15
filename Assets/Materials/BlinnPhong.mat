@@ -98,6 +98,7 @@ Material:
     - _AlphaClip: 0
     - _Blend: 0
     - _BumpScale: 1
+    - _CausticAbsorption: 0.7
     - _CausticsStrength: 5
     - _ClearCoatMask: 0
     - _ClearCoatSmoothness: 0
@@ -121,7 +122,7 @@ Material:
     - _SpecularHighlights: 1
     - _SrcBlend: 1
     - _Surface: 0
-    - _WaterAbsorption: 1.4
+    - _WaterAbsorption: 3.4
     - _WaterCausticsSpeed: 0.03
     - _WorkflowMode: 1
     - _ZWrite: 1

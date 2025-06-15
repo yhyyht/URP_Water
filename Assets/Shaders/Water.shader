@@ -25,7 +25,9 @@ Shader "Custom/BlinnPhong"
         _CausticsStrength("Caustics Strength", Range(0., 10.)) = 5.
         _WaterCausticsSpeed("Water Caustics Speed", Range(0., 1.)) = 0.03
         _CausticsRGBOffset("Caustics RGB Offset", Vector) = (0.005,0.005,0., 0.)
+        _CausticAbsorption("Caustic Absorption", Range(0.0, 2.0)) = 0.1
         [MainTexture] _WaterCaustics("Water Caustics", 2D) = "white" {}
+        _RefractionSize("_RefractionSize", Float) = 1.53
     }
     SubShader
     {
@@ -33,7 +35,7 @@ Shader "Custom/BlinnPhong"
 
         Pass
         {
-            
+            Cull Off
 
             HLSLPROGRAM
             #pragma vertex vert
@@ -42,6 +44,11 @@ Shader "Custom/BlinnPhong"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DeclareDepthTexture.hlsl"
+            #pragma multi_compile _ _MAIN_LIGHT_SHADOWS
+            #pragma multi_compile _ _MAIN_LIGHT_SHADOWS_CASCADE
+            #pragma multi_compile _ _ADDITIONAL_LIGHTS_VERTEX _ADDITIONAL_LIGHTS
+            #pragma multi_compile_fragment _ _ADDITIONAL_LIGHT_SHADOWS
+            #pragma multi_compile_fragment _ _SHADOWS_SOFT
 
             struct Attributes
             {
@@ -72,11 +79,22 @@ Shader "Custom/BlinnPhong"
             float _CausticsStrength;
             float _WaterCausticsSpeed;
             float4 _CausticsRGBOffset;
+            float _CausticAbsorption;
+            float _RefractionSize;
 
             TEXTURE2D(_CameraOpaqueTexture);
             SAMPLER(sampler_CameraOpaqueTexture);
             TEXTURE2D(_WaterCaustics);
             SAMPLER(sampler_WaterCaustics);
+            TEXTURE2D(_WaterHeight);
+            SAMPLER(sampler_WaterHeight);
+
+            TEXTURE2D(_UnderWaterMask);
+            SAMPLER(sampler_UnderWaterMask);
+            TEXTURECUBE(_GlossyEnviromentCubeMap);
+            SAMPLER(sampler_unity_SpecCube0);
+            TEXTURE2D(_waterLine);
+            SAMPLER(sampler_waterLine);
 
             CBUFFER_END
 
@@ -98,6 +116,15 @@ Shader "Custom/BlinnPhong"
                 return float2(dstToBox, dstInsideBox);
             }
 
+            float SampleShadows(float3 positionWS)
+			{
+			    //Fetch shadow coordinates for cascade.
+			    float4 shadowCoord = TransformWorldToShadowCoord(positionWS);
+				float attenuation = MainLightRealtimeShadow(shadowCoord);
+			
+				return attenuation; 
+			}
+
             float3 GetWorldPositionFromDepth(float3 positionHCS)
             {
                 /* get world space position */
@@ -109,6 +136,18 @@ Shader "Custom/BlinnPhong"
                     real depth = lerp(UNITY_NEAR_CLIP_VALUE, 1, SampleSceneDepth(UV));
                 #endif
                 return ComputeWorldSpacePosition(UV, depth, UNITY_MATRIX_I_VP);
+            }
+
+            float getWaterHeight(float3 positionHCS)
+            {
+                float2 UV = positionHCS.xy / _ScaledScreenParams.xy;
+                #if UNITY_REVERSED_Z
+                    real h = SAMPLE_TEXTURE2D_X(_WaterHeight, sampler_WaterHeight, UV);
+                #else
+                    real h = lerp(UNITY_NEAR_CLIP_VALUE, 1, SAMPLE_TEXTURE2D_X(_WaterHeight, sampler_WaterHeight, UV));
+                #endif
+
+                return h;
             }
 
             Varyings vert(Attributes IN)
@@ -131,7 +170,11 @@ Shader "Custom/BlinnPhong"
                 half3 normalWS = normalize(IN.normalWS);
                 half3 viewWS =  SafeNormalize(IN.viewWS);
 
-                half3 specularColor = LightingSpecular(lightColor, light.direction, normalWS, viewWS, _SpecularColor, smoothness);
+                // return SAMPLE_TEXTURE2D(_UnderWaterMask, sampler_UnderWaterMask, screenUV);
+                float3 reflectDir=normalize(reflect(-viewWS,IN.normalWS));
+                float4 envCol = SAMPLE_TEXTURECUBE(unity_SpecCube0,sampler_unity_SpecCube0 , reflectDir);
+                half3 envHDRCol = DecodeHDREnvironment(envCol, unity_SpecCube0_HDR);
+                half3 specularColor = envHDRCol * _Smoothness;
                 half3 diffuseColor = LightingLambert(lightColor,light.direction,normalWS) * _BaseColor;
                 half3 ambientColor = unity_AmbientSky.rgb * _BaseColor;
                 half4 totalColor = half4(diffuseColor + specularColor + ambientColor,1);
@@ -164,15 +207,25 @@ Shader "Custom/BlinnPhong"
 
                 inScatteringLight *= lightColor * stepLength * _ScatteringCofficient * Pr;
 
+                //水下漏斗形光照部分
+                //漏斗光照区域
+                float3 viewDirWS = normalize(_WorldSpaceCameraPos - IN.positionWS);
+                half3 refractDir = refract(-viewDirWS,-IN.normalWS,1 / 1.33);
+                half m = saturate(1 - _RefractionSize * length(refractDir.xz));
+                m = _WorldSpaceCameraPos.y > IN.positionWS.y ? 1 : m;
+                // return float4(m.rrr,1);
                 //不透明物体的原有色彩（用于表示水下物体投射）
                 //refractionTwist为折射扰动
                 float2 refractionTwist = IN.normalWS.xz * _RefractionIndex;
                 float2 screenUV = IN.positionHCS.xy / _ScaledScreenParams.xy + refractionTwist;
-                half3 cb = SAMPLE_TEXTURE2D(_CameraOpaqueTexture, sampler_CameraOpaqueTexture, screenUV).rgb;
+                half3 cb = m * SAMPLE_TEXTURE2D(_CameraOpaqueTexture, sampler_CameraOpaqueTexture, screenUV).rgb;
 
                 //水下焦散
                 //当深度贴图采样不为0时，说明深度不是无穷大，此处存在物体
-                float causticsMask = step(0.001, SampleSceneDepth(screenUV)) * exp(-thickness * _WaterAbsorption);
+                float shadowMask = 1;
+                // Get the value from the shadow map at the shadow coordinates
+                shadowMask = SampleShadows(opaquePoint);
+                float causticsMask = step(opaquePoint.y, IN.positionWS.y ) * step(0.001, SampleSceneDepth(screenUV)) * exp(-thickness * _CausticAbsorption);
                 float3 causticLightSpacePosition = mul(opaquePoint, _SunMatrix).xyz;
                 float2 lightUV = causticLightSpacePosition.xy + refractionTwist;
                 lightUV = TRANSFORM_TEX(lightUV, _WaterCaustics);
@@ -191,10 +244,14 @@ Shader "Custom/BlinnPhong"
                 half3 causticsColor2 = half3(causticsColor2_R, causticsColor2_G, causticsColor2_B);
                 half3 causticsColor = min(causticsColor1, causticsColor2);
                
-                half3 caustics = causticsMask * causticsColor * _CausticsStrength * pow(light.color.rgb, 2);
+                // float causticsMask = ;
+                half3 caustics = shadowMask * causticsMask * causticsColor * _CausticsStrength * pow(light.color.rgb, 2);
 
-                // return half4(cb, 1);
-                return half4((Tr + inScatteringLight) * cb + caustics, 1) + totalColor;
+                float mask = SAMPLE_TEXTURE2D(_waterLine, sampler_waterLine, screenUV);
+                // return half4(envHDRCol,1);
+
+                // return half4(getWaterHeight(IN.positionHCS), 0,0,1);
+                return  (half4((Tr + inScatteringLight) * cb  + caustics , 1) + totalColor);
 
                 return totalColor;
             }
